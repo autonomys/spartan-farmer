@@ -1,0 +1,17 @@
+[package]
+name = "spartan-farmer"
+version = "0.0.1"
+authors = ["Nazar Mokrynskyi <nazar@mokrynskyi.com>"]
+edition = "2018"
+
+[dependencies]
+env_logger = "0.8.3"
+jsonrpsee = "0.1.0"
+
+[dependencies.async-std]
+features = ["attributes"]
+version = "1.9.0"
+
+[dependencies.serde]
+features = ["derive"]
+versions = "1.0.123"
