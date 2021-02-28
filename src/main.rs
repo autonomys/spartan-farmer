@@ -16,6 +16,7 @@ struct Solution {
 pub struct ProposedProofOfSpaceResponse {
     slot_number: SlotNumber,
     solution: Option<Solution>,
+    tag: [u8; 32],
 }
 
 #[derive(Debug, Deserialize)]
