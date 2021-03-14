@@ -10,6 +10,8 @@ struct Solution {
     nonce: u32,
     encoding: Vec<u8>,
     signature: [u8; 32],
+    tag: [u8; 32],
+    randomness: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,13 +46,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let slot_info = sub.next().await;
         println!("{:?}", slot_info);
         // TODO: Evaluate plot
-        let solution = None;
         client
             .notification(
                 "babe_proposeProofOfSpace",
                 Params::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
                     slot_number: slot_info.slot_number,
-                    solution,
+                    solution: Some(Solution {
+                        public_key: [0u8; 32],
+                        nonce: 0,
+                        encoding: vec![],
+                        signature: [0u8; 32],
+                        tag: [0u8; 32],
+                        randomness: vec![],
+                    }),
+                    tag: [0u8; 32],
                 })
                 .unwrap()]),
             )
