@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     println!("Connecting");
-    let client = jsonrpsee::ws_client("ws://127.0.0.1:9945").await?;
+    let client = jsonrpsee::ws_client("ws://127.0.0.1:9944").await?;
     println!("Connected");
     let mut sub: Subscription<SlotInfo> = client
         .subscribe(
@@ -46,8 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let slot_info = sub.next().await;
         println!("{:?}", slot_info);
         // TODO: Evaluate plot
-        client
-            .notification(
+        let result = client
+            .request(
                 "babe_proposeProofOfSpace",
                 Params::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
                     slot_number: slot_info.slot_number,
@@ -64,5 +64,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()]),
             )
             .await;
+        match result {
+            Ok(()) => {
+                print!("Solution sent successfully");
+            }
+            Err(error) => {
+                eprint!("Failed to send solution: {:?}", error);
+            }
+        }
     }
 }
