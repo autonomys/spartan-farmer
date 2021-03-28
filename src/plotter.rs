@@ -10,6 +10,7 @@ use schnorrkel::PublicKey;
 use spartan::Spartan;
 use std::time::Instant;
 
+// TODO: Plotter consumes a lot of RAM if disk write is slower than CPU encoding
 pub async fn plot(path: PathBuf, genesis_piece: Piece, piece_count: u64, public_key: PublicKey) {
     let plot = Plot::open_or_create(&path).await.unwrap();
     let public_key_hash = crypto::hash_public_key(&public_key);
@@ -48,7 +49,7 @@ pub async fn plot(path: PathBuf, genesis_piece: Piece, piece_count: u64, public_
 
         info!("Slowly plotting {} pieces...", piece_count);
 
-        eprintln!(
+        info!(
             r#"
           `""==,,__
             `"==..__"=..__ _    _..-==""_
@@ -65,6 +66,16 @@ pub async fn plot(path: PathBuf, genesis_piece: Piece, piece_count: u64, public_
         );
 
         plotting_fut.await;
+
+        let (tx, rx) = oneshot::channel();
+
+        let _handler = plot.on_close(move || {
+            let _ = tx.send(());
+        });
+
+        drop(plot);
+
+        rx.await.unwrap();
 
         let total_plot_time = plot_time.elapsed();
         let average_plot_time =
@@ -84,13 +95,15 @@ pub async fn plot(path: PathBuf, genesis_piece: Piece, piece_count: u64, public_
         );
     } else {
         info!("Using existing plot...");
+
+        let (tx, rx) = oneshot::channel();
+
+        let _handler = plot.on_close(move || {
+            let _ = tx.send(());
+        });
+
+        drop(plot);
+
+        rx.await.unwrap();
     }
-
-    let (tx, rx) = oneshot::channel();
-
-    let _handler = plot.on_close(move || {
-        let _ = tx.send(());
-    });
-
-    rx.await.unwrap()
 }

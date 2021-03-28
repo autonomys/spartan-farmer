@@ -1,6 +1,18 @@
-use crate::PRIME_SIZE_BYTES;
+use crate::{Piece, PIECE_SIZE, PRIME_SIZE_BYTES};
 use ring::{digest, hmac};
 use schnorrkel::PublicKey;
+use std::io::Write;
+
+pub fn genesis_piece_from_seed(seed: &str) -> Piece {
+    // TODO: This is not efficient
+    let mut piece = [0u8; PIECE_SIZE];
+    let mut input = seed.as_bytes().to_vec();
+    for mut chunk in piece.chunks_mut(digest::SHA256.output_len) {
+        input = digest::digest(&digest::SHA256, &input).as_ref().to_vec();
+        chunk.write_all(input.as_ref()).unwrap();
+    }
+    piece
+}
 
 pub(crate) fn hash_public_key(public_key: &PublicKey) -> [u8; PRIME_SIZE_BYTES] {
     let mut array = [0u8; PRIME_SIZE_BYTES];

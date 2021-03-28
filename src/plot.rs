@@ -54,8 +54,8 @@ struct Handlers {
 pub struct Inner {
     handlers: Arc<Handlers>,
     any_requests_sender: async_mpsc::Sender<()>,
-    read_requests_sender: async_mpsc::UnboundedSender<ReadRequests>,
-    write_requests_sender: async_mpsc::UnboundedSender<WriteRequests>,
+    read_requests_sender: async_mpsc::Sender<ReadRequests>,
+    write_requests_sender: async_mpsc::Sender<WriteRequests>,
 }
 
 #[derive(Clone)]
@@ -81,9 +81,9 @@ impl Plot {
         // Channel with at most single element to throttle loop below if there are no updates
         let (any_requests_sender, mut any_requests_receiver) = async_mpsc::channel::<()>(1);
         let (read_requests_sender, mut read_requests_receiver) =
-            async_mpsc::unbounded::<ReadRequests>();
+            async_mpsc::channel::<ReadRequests>(100);
         let (write_requests_sender, mut write_requests_receiver) =
-            async_mpsc::unbounded::<WriteRequests>();
+            async_mpsc::channel::<WriteRequests>(100);
 
         let handlers = Arc::new(Handlers::default());
 
@@ -233,7 +233,7 @@ impl Plot {
                             let _ = result_sender.send(
                                 try {
                                     plot_file
-                                        .seek(SeekFrom::End((index * PIECE_SIZE as u64) as i64))
+                                        .seek(SeekFrom::Start(index * PIECE_SIZE as u64))
                                         .await?;
                                     plot_file.write_all(&encoding).await?;
 
