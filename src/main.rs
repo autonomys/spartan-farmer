@@ -1,9 +1,8 @@
-mod farm;
-mod plot;
+mod commands;
 
 use async_std::task;
-
 use clap::{Clap, ValueHint};
+use commands::{farm, plot};
 use std::fs;
 use std::path::PathBuf;
 
