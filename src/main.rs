@@ -44,11 +44,14 @@ fn get_path(custom_path: Option<PathBuf>) -> PathBuf {
 }
 
 fn main() {
+    env_logger::init();
+
     let command: Command = Command::parse();
 
     match command {
-        Command::Plot { .. } => {
-            unimplemented!()
+        Command::Plot { custom_path } => {
+            let path = get_path(custom_path);
+            plot::plot(path).unwrap();
         }
         Command::Farm { .. } => {
             // TODO: Implement correctly

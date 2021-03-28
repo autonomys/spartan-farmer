@@ -28,8 +28,6 @@ struct SlotInfo {
 }
 
 pub async fn farm() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
-
     println!("Connecting");
     let client = jsonrpsee::ws_client("ws://127.0.0.1:9944").await?;
     println!("Connected");
