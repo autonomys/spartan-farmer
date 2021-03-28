@@ -1,76 +1,58 @@
-use jsonrpsee::client::Subscription;
-use jsonrpsee::common::Params;
-use serde::{Deserialize, Serialize};
+mod farm;
+mod plot;
 
-type SlotNumber = u64;
+use async_std::task;
 
-#[derive(Debug, Serialize)]
-struct Solution {
-    public_key: [u8; 32],
-    nonce: u32,
-    encoding: Vec<u8>,
-    signature: [u8; 32],
-    tag: [u8; 32],
-    randomness: Vec<u8>,
+use clap::{Clap, ValueHint};
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Clap)]
+#[clap(about, version)]
+enum Command {
+    /// Create initial plot
+    Plot {
+        /// Use custom path for data storage instead of platform-specific default
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        custom_path: Option<PathBuf>,
+    },
+    /// Start a farmer using previously created plot
+    Farm {
+        /// Use custom path for data storage instead of platform-specific default
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        custom_path: Option<PathBuf>,
+    },
 }
 
-#[derive(Debug, Serialize)]
-pub struct ProposedProofOfSpaceResponse {
-    slot_number: SlotNumber,
-    solution: Option<Solution>,
-    tag: [u8; 32],
+fn get_path(custom_path: Option<PathBuf>) -> PathBuf {
+    // set storage path
+    let path = custom_path
+        .or_else(|| std::env::var("SUBSPACE_DIR").map(PathBuf::from).ok())
+        .unwrap_or_else(|| {
+            dirs::data_local_dir()
+                .expect("Can't find local data directory, needs to be specified explicitly")
+                .join("subspace")
+        });
+
+    if !path.exists() {
+        fs::create_dir_all(&path).unwrap_or_else(|error| {
+            panic!("Failed to create data directory {:?}: {:?}", path, error)
+        });
+    }
+
+    path
 }
 
-#[derive(Debug, Deserialize)]
-pub struct SlotInfo {
-    slot_number: SlotNumber,
-    epoch_randomness: Vec<u8>,
-}
+fn main() {
+    let command: Command = Command::parse();
 
-#[async_std::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
-
-    println!("Connecting");
-    let client = jsonrpsee::ws_client("ws://127.0.0.1:9944").await?;
-    println!("Connected");
-    let mut sub: Subscription<SlotInfo> = client
-        .subscribe(
-            "babe_subscribeSlotInfo",
-            Params::None,
-            "babe_unsubscribeSlotInfo",
-        )
-        .await?;
-    println!("Subscribed");
-    loop {
-        let slot_info = sub.next().await;
-        println!("{:?}", slot_info);
-        // TODO: Evaluate plot
-        let result = client
-            .request(
-                "babe_proposeProofOfSpace",
-                Params::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
-                    slot_number: slot_info.slot_number,
-                    solution: Some(Solution {
-                        public_key: [0u8; 32],
-                        nonce: 0,
-                        encoding: vec![],
-                        signature: [0u8; 32],
-                        tag: [0u8; 32],
-                        randomness: vec![],
-                    }),
-                    tag: [0u8; 32],
-                })
-                .unwrap()]),
-            )
-            .await;
-        match result {
-            Ok(()) => {
-                print!("Solution sent successfully");
-            }
-            Err(error) => {
-                eprint!("Failed to send solution: {:?}", error);
-            }
+    match command {
+        Command::Plot { .. } => {
+            unimplemented!()
+        }
+        Command::Farm { .. } => {
+            // TODO: Implement correctly
+            task::block_on(farm::farm()).unwrap();
         }
     }
 }
