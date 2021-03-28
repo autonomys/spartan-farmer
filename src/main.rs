@@ -3,7 +3,6 @@
 mod commands;
 mod crypto;
 mod plot;
-mod plotter;
 mod utils;
 
 use async_std::task;

@@ -14,10 +14,13 @@ use std::io;
 use std::io::SeekFrom;
 use std::ops::Deref;
 use std::sync::Arc;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum PlotCreationError {
+    #[error("Plot open error: {0}")]
     PlotOpen(io::Error),
+    #[error("Plot tags open error: {0}")]
     PlotTagsOpen(rocksdb::Error),
 }
 
