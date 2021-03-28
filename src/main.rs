@@ -68,7 +68,6 @@ fn main() {
             ws_server,
         } => {
             let path = utils::get_path(custom_path);
-            // TODO: Implement correctly
             task::block_on(commands::farm::farm(path, &ws_server)).unwrap();
         }
     }

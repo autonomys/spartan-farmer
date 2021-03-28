@@ -91,7 +91,6 @@ impl Plot {
 
         let handlers = Arc::new(Handlers::default());
 
-        // TODO: Handle drop nicer: when read is dropped, make sure writes still all finish
         task::spawn({
             let handlers = Arc::clone(&handlers);
 

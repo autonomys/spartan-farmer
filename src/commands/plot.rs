@@ -113,8 +113,17 @@ pub async fn plot(
         );
     } else {
         info!("Using existing plot...");
+
+        let (tx, rx) = oneshot::channel();
+
+        let _handler = plot.on_close(move || {
+            let _ = tx.send(());
+        });
+
+        drop(plot);
+
+        rx.await?;
     }
 
-    // TODO
     Ok(())
 }
