@@ -1,5 +1,5 @@
 use crate::plot::Plot;
-use crate::{crypto, utils, Piece, ENCODE_ROUNDS, PIECE_SIZE, PRIME_SIZE_BYTES};
+use crate::{crypto, utils, Piece, Salt, ENCODE_ROUNDS, PIECE_SIZE, PRIME_SIZE_BYTES};
 use async_std::task;
 use futures::channel::oneshot;
 use indicatif::ProgressBar;
@@ -15,6 +15,7 @@ pub async fn plot(
     path: PathBuf,
     genesis_piece: Piece,
     piece_count: u64,
+    salt: Salt,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let identity_file = path.join("identity.bin");
     let keypair = if identity_file.exists() {
@@ -46,7 +47,7 @@ pub async fn plot(
                         let plot = plot.clone();
 
                         async move {
-                            let result = plot.write(encoding, index).await;
+                            let result = plot.write(encoding, index, salt).await;
 
                             if let Err(error) = result {
                                 warn!("{}", error);
@@ -90,6 +91,8 @@ pub async fn plot(
 
         drop(plot);
 
+        info!("Finishing writing to disk...");
+
         rx.await?;
 
         let total_plot_time = plot_time.elapsed();
@@ -110,16 +113,6 @@ pub async fn plot(
         );
     } else {
         info!("Using existing plot...");
-
-        let (tx, rx) = oneshot::channel();
-
-        let _handler = plot.on_close(move || {
-            let _ = tx.send(());
-        });
-
-        drop(plot);
-
-        rx.await?;
     }
 
     // TODO

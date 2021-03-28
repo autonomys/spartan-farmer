@@ -1,4 +1,4 @@
-use crate::{crypto, utils, Piece, Tag, PIECE_SIZE};
+use crate::{crypto, utils, Piece, Salt, Tag, PIECE_SIZE};
 use async_std::fs::OpenOptions;
 use async_std::path::PathBuf;
 use async_std::task;
@@ -36,7 +36,7 @@ enum ReadRequests {
     FindByRange {
         target: Tag,
         range: u64,
-        result_sender: oneshot::Sender<io::Result<Vec<(Tag, u64)>>>,
+        result_sender: oneshot::Sender<io::Result<Option<(Tag, u64)>>>,
     },
 }
 
@@ -45,6 +45,7 @@ enum WriteRequests {
     WriteEncoding {
         encoding: Piece,
         index: u64,
+        salt: Salt,
         result_sender: oneshot::Sender<io::Result<()>>,
     },
 }
@@ -217,7 +218,7 @@ impl Plot {
                                 })
                                 .await;
 
-                                let _ = result_sender.send(Ok(solutions));
+                                let _ = result_sender.send(Ok(solutions.into_iter().next()));
                             }
                         }
                     }
@@ -231,6 +232,7 @@ impl Plot {
                         Ok(Some(WriteRequests::WriteEncoding {
                             index,
                             encoding,
+                            salt,
                             result_sender,
                         })) => {
                             let _ = result_sender.send(
@@ -243,8 +245,7 @@ impl Plot {
                                     // TODO: remove unwrap
                                     utils::spawn_blocking({
                                         let tags_db = Arc::clone(&tags_db);
-                                        let tag =
-                                            crypto::create_hmac(&encoding, &index.to_le_bytes());
+                                        let tag = crypto::create_hmac(&encoding, &salt);
                                         move || tags_db.put(&tag[0..8], index.to_le_bytes())
                                     })
                                     .await
@@ -323,7 +324,11 @@ impl Plot {
             .expect("Read encoding result sender was dropped")
     }
 
-    pub async fn find_by_range(&self, target: [u8; 8], range: u64) -> io::Result<Vec<(Tag, u64)>> {
+    pub async fn find_by_range(
+        &self,
+        target: [u8; 8],
+        range: u64,
+    ) -> io::Result<Option<(Tag, u64)>> {
         let (result_sender, result_receiver) = oneshot::channel();
 
         self.read_requests_sender
@@ -345,7 +350,7 @@ impl Plot {
     }
 
     /// Writes a piece to the plot by index, will overwrite if piece exists (updates)
-    pub async fn write(&self, encoding: Piece, index: u64) -> io::Result<()> {
+    pub async fn write(&self, encoding: Piece, index: u64, salt: Salt) -> io::Result<()> {
         let (result_sender, result_receiver) = oneshot::channel();
 
         self.write_requests_sender
@@ -353,6 +358,7 @@ impl Plot {
             .send(WriteRequests::WriteEncoding {
                 encoding,
                 index,
+                salt,
                 result_sender,
             })
             .await
@@ -431,11 +437,12 @@ mod tests {
         let path = TargetDirectory::new("read_write");
 
         let piece = generate_random_piece();
+        let salt: Salt = [1u8; 32];
         let index = 0;
 
         let plot = Plot::open_or_create(&path).await.unwrap();
         assert_eq!(true, plot.is_empty().await);
-        plot.write(piece, index).await.unwrap();
+        plot.write(piece, index, salt).await.unwrap();
         assert_eq!(false, plot.is_empty().await);
         let extracted_piece = plot.read(index).await.unwrap();
 
@@ -459,11 +466,12 @@ mod tests {
     async fn test_find_by_tag() {
         init();
         let path = TargetDirectory::new("find_by_tag");
+        let salt: Salt = [1u8; 32];
 
         let plot = Plot::open_or_create(&path).await.unwrap();
         for index in 0..1024 {
             let piece = generate_random_piece();
-            plot.write(piece, index).await.unwrap();
+            plot.write(piece, index, salt).await.unwrap();
         }
 
         {

@@ -9,12 +9,16 @@ use async_std::task;
 use clap::{Clap, ValueHint};
 use std::path::PathBuf;
 
+type Piece = [u8; PIECE_SIZE];
+type Tag = [u8; PRIME_SIZE_BYTES];
+type Salt = [u8; 32];
+
 const PRIME_SIZE_BYTES: usize = 8;
 const PIECE_SIZE: usize = 4096;
 const ENCODE_ROUNDS: usize = 1;
-
-type Piece = [u8; PIECE_SIZE];
-type Tag = [u8; PRIME_SIZE_BYTES];
+// TODO: Replace fixed salt with something
+const SALT: Salt = [1u8; 32];
+const SIGNING_CONTEXT: &[u8] = b"FARMER";
 
 #[derive(Debug, Clap)]
 #[clap(about, version)]
@@ -34,6 +38,8 @@ enum Command {
         /// Use custom path for data storage instead of platform-specific default
         #[clap(long, value_hint = ValueHint::FilePath)]
         custom_path: Option<PathBuf>,
+        #[clap(long, default_value = "ws://127.0.0.1:9944")]
+        ws_server: String,
     },
 }
 
@@ -53,12 +59,17 @@ fn main() {
                 path,
                 crypto::genesis_piece_from_seed(&seed),
                 plot_pieces,
+                SALT,
             ))
             .unwrap();
         }
-        Command::Farm { .. } => {
+        Command::Farm {
+            custom_path,
+            ws_server,
+        } => {
+            let path = utils::get_path(custom_path);
             // TODO: Implement correctly
-            task::block_on(commands::farm::farm()).unwrap();
+            task::block_on(commands::farm::farm(path, &ws_server)).unwrap();
         }
     }
 }
