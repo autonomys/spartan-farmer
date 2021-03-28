@@ -67,7 +67,7 @@ pub async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::err
         debug!("New slot: {:?}", slot_info);
 
         let solution = match plot
-            .find_by_range(slot_info.challenge, u64::MAX / 4096)
+            .find_by_range(slot_info.challenge, slot_info.solution_range)
             .await?
         {
             Some((tag, index)) => {
