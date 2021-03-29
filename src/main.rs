@@ -1,76 +1,74 @@
-use jsonrpsee::client::Subscription;
-use jsonrpsee::common::Params;
-use serde::{Deserialize, Serialize};
+#![feature(try_blocks)]
 
-type SlotNumber = u64;
+mod commands;
+mod crypto;
+mod plot;
+mod utils;
 
-#[derive(Debug, Serialize)]
-struct Solution {
-    public_key: [u8; 32],
-    nonce: u32,
-    encoding: Vec<u8>,
-    signature: [u8; 32],
-    tag: [u8; 32],
-    randomness: Vec<u8>,
+use async_std::task;
+use clap::{Clap, ValueHint};
+use std::path::PathBuf;
+
+type Piece = [u8; PIECE_SIZE];
+type Tag = [u8; PRIME_SIZE_BYTES];
+type Salt = [u8; 32];
+
+const PRIME_SIZE_BYTES: usize = 8;
+const PIECE_SIZE: usize = 4096;
+const ENCODE_ROUNDS: usize = 1;
+// TODO: Replace fixed salt with something
+const SALT: Salt = [1u8; 32];
+const SIGNING_CONTEXT: &[u8] = b"FARMER";
+
+#[derive(Debug, Clap)]
+#[clap(about, version)]
+enum Command {
+    /// Create initial plot
+    Plot {
+        /// Use custom path for data storage instead of platform-specific default
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        custom_path: Option<PathBuf>,
+        /// Number of 4096 bytes pieces to plot
+        plot_pieces: u64,
+        /// Seed used for generating genesis piece
+        seed: String,
+    },
+    /// Start a farmer using previously created plot
+    Farm {
+        /// Use custom path for data storage instead of platform-specific default
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        custom_path: Option<PathBuf>,
+        #[clap(long, default_value = "ws://127.0.0.1:9944")]
+        ws_server: String,
+    },
 }
 
-#[derive(Debug, Serialize)]
-pub struct ProposedProofOfSpaceResponse {
-    slot_number: SlotNumber,
-    solution: Option<Solution>,
-    tag: [u8; 32],
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SlotInfo {
-    slot_number: SlotNumber,
-    epoch_randomness: Vec<u8>,
-}
-
-#[async_std::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     env_logger::init();
 
-    println!("Connecting");
-    let client = jsonrpsee::ws_client("ws://127.0.0.1:9944").await?;
-    println!("Connected");
-    let mut sub: Subscription<SlotInfo> = client
-        .subscribe(
-            "babe_subscribeSlotInfo",
-            Params::None,
-            "babe_unsubscribeSlotInfo",
-        )
-        .await?;
-    println!("Subscribed");
-    loop {
-        let slot_info = sub.next().await;
-        println!("{:?}", slot_info);
-        // TODO: Evaluate plot
-        let result = client
-            .request(
-                "babe_proposeProofOfSpace",
-                Params::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
-                    slot_number: slot_info.slot_number,
-                    solution: Some(Solution {
-                        public_key: [0u8; 32],
-                        nonce: 0,
-                        encoding: vec![],
-                        signature: [0u8; 32],
-                        tag: [0u8; 32],
-                        randomness: vec![],
-                    }),
-                    tag: [0u8; 32],
-                })
-                .unwrap()]),
-            )
-            .await;
-        match result {
-            Ok(()) => {
-                print!("Solution sent successfully");
-            }
-            Err(error) => {
-                eprint!("Failed to send solution: {:?}", error);
-            }
+    let command: Command = Command::parse();
+
+    match command {
+        Command::Plot {
+            custom_path,
+            plot_pieces,
+            seed,
+        } => {
+            let path = utils::get_path(custom_path);
+            task::block_on(commands::plot::plot(
+                path,
+                crypto::genesis_piece_from_seed(&seed),
+                plot_pieces,
+                SALT,
+            ))
+            .unwrap();
+        }
+        Command::Farm {
+            custom_path,
+            ws_server,
+        } => {
+            let path = utils::get_path(custom_path);
+            task::block_on(commands::farm::farm(path, &ws_server)).unwrap();
         }
     }
 }
