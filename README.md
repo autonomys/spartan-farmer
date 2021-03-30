@@ -9,7 +9,7 @@
 
 Subspace is a proof-of-storage blockchain that resolves the farmer's dilemma, to learn more read our <a href="https://drive.google.com/file/d/1v847u_XeVf0SBz7Y7LEMXi72QfqirstL/view">whitepaper</a>. 
 
-This a bare-bones farmer for the simplified Spartan proof-of-space variant of Subspace. A farmer is similar to a miner in a proof-of-work blockchain, but instead of wasting CPU cycles, it wastes disk space. Much of this code has been extracted from <a href"https://www.github.com/subspace/subspace-core-rust">subspace-core-rust</a>.
+This a bare-bones farmer for the simplified Spartan proof-of-space variant of Subspace. A farmer is similar to a miner in a proof-of-work blockchain, but instead of wasting CPU cycles, it wastes disk space. Much of this code has been extracted from <a href="https://www.github.com/subspace/subspace-core-rust">subspace-core-rust</a>.
 
 The farmer basically has two modes: plotting and farming.
 
