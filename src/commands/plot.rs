@@ -127,7 +127,7 @@ pub async fn plot(
         );
 
         info!(
-            "Plotting throughput is {} mb/sec\n",
+            "Plotting throughput is {} MB/sec\n",
             ((piece_count as u64 * PIECE_SIZE as u64) / (1000 * 1000)) as f32
                 / (total_plot_time.as_secs_f32())
         );
