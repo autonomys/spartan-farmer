@@ -7,6 +7,8 @@ mod utils;
 
 use async_std::task;
 use clap::{Clap, ValueHint};
+use log::info;
+use std::fs;
 use std::path::PathBuf;
 
 type Piece = [u8; PIECE_SIZE];
@@ -32,6 +34,12 @@ enum Command {
         plot_pieces: u64,
         /// Seed used for generating genesis piece
         seed: String,
+    },
+    /// Erase existing
+    ErasePlot {
+        /// Use custom path for data storage instead of platform-specific default
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        custom_path: Option<PathBuf>,
     },
     /// Start a farmer using previously created plot
     Farm {
@@ -62,6 +70,14 @@ fn main() {
                 SALT,
             ))
             .unwrap();
+        }
+        Command::ErasePlot { custom_path } => {
+            let path = utils::get_path(custom_path);
+            info!("Erasing the plot");
+            fs::remove_file(path.join("plot.bin")).unwrap();
+            info!("Erasing plot metadata");
+            fs::remove_dir_all(path.join("plot-tags")).unwrap();
+            info!("Done");
         }
         Command::Farm {
             custom_path,
