@@ -77,6 +77,8 @@ fn main() {
             fs::remove_file(path.join("plot.bin")).unwrap();
             info!("Erasing plot metadata");
             fs::remove_dir_all(path.join("plot-tags")).unwrap();
+            info!("Erasing identify");
+            fs::remove_file(path.join("identity.bin")).unwrap();
             info!("Done");
         }
         Command::Farm {
