@@ -42,9 +42,9 @@ enum ReadRequests {
 
 #[derive(Debug)]
 enum WriteRequests {
-    WriteEncoding {
-        encoding: Piece,
-        index: u64,
+    WriteEncodings {
+        encodings: Vec<Piece>,
+        first_index: u64,
         salt: Salt,
         result_sender: oneshot::Sender<io::Result<()>>,
     },
@@ -228,24 +228,40 @@ impl Plot {
                     }
                     // Process at most write request since reading is higher priority
                     match write_request {
-                        Ok(Some(WriteRequests::WriteEncoding {
-                            index,
-                            encoding,
+                        Ok(Some(WriteRequests::WriteEncodings {
+                            encodings,
+                            first_index,
                             salt,
                             result_sender,
                         })) => {
                             let _ = result_sender.send(
                                 try {
                                     plot_file
-                                        .seek(SeekFrom::Start(index * PIECE_SIZE as u64))
+                                        .seek(SeekFrom::Start(first_index * PIECE_SIZE as u64))
                                         .await?;
-                                    plot_file.write_all(&encoding).await?;
+                                    {
+                                        let mut whole_encoding = Vec::with_capacity(
+                                            encodings[0].len() * encodings.len(),
+                                        );
+                                        for encoding in &encodings {
+                                            whole_encoding.extend_from_slice(encoding);
+                                        }
+                                        plot_file.write_all(&whole_encoding).await?;
+                                    }
 
                                     // TODO: remove unwrap
                                     utils::spawn_blocking({
                                         let tags_db = Arc::clone(&tags_db);
-                                        let tag = crypto::create_hmac(&encoding, &salt);
-                                        move || tags_db.put(&tag[0..8], index.to_le_bytes())
+                                        move || {
+                                            for (encoding, index) in
+                                                encodings.iter().zip(first_index..)
+                                            {
+                                                let tag = crypto::create_hmac(encoding, &salt);
+                                                tags_db.put(&tag[0..8], index.to_le_bytes())?;
+                                            }
+
+                                            Ok::<(), rocksdb::Error>(())
+                                        }
                                     })
                                     .await
                                     .unwrap();
@@ -349,14 +365,22 @@ impl Plot {
     }
 
     /// Writes a piece to the plot by index, will overwrite if piece exists (updates)
-    pub async fn write(&self, encoding: Piece, index: u64, salt: Salt) -> io::Result<()> {
+    pub async fn write_many(
+        &self,
+        encodings: Vec<Piece>,
+        first_index: u64,
+        salt: Salt,
+    ) -> io::Result<()> {
+        if encodings.is_empty() {
+            return Ok(());
+        }
         let (result_sender, result_receiver) = oneshot::channel();
 
         self.write_requests_sender
             .clone()
-            .send(WriteRequests::WriteEncoding {
-                encoding,
-                index,
+            .send(WriteRequests::WriteEncodings {
+                encodings,
+                first_index,
                 salt,
                 result_sender,
             })
