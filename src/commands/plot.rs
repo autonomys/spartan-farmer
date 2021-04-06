@@ -1,7 +1,7 @@
 use crate::plot::Plot;
-use crate::{crypto, utils, Piece, Salt, ENCODE_ROUNDS, PIECE_SIZE, PRIME_SIZE_BYTES};
-use async_std::task;
-use futures::channel::oneshot;
+use crate::{crypto, Piece, Salt, ENCODE_ROUNDS, PIECE_SIZE, PRIME_SIZE_BYTES};
+use futures::channel::{mpsc, oneshot};
+use futures::{SinkExt, StreamExt};
 use indicatif::ProgressBar;
 use log::{info, warn};
 use rayon::prelude::*;
@@ -9,7 +9,10 @@ use schnorrkel::Keypair;
 use spartan::Spartan;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
+
+const BATCH_SIZE: u64 = (16 * 1024 * 1204 / PIECE_SIZE) as u64;
 
 pub async fn plot(
     path: PathBuf,
@@ -30,36 +33,53 @@ pub async fn plot(
 
     let plot = Plot::open_or_create(&path.into()).await?;
     let public_key_hash = crypto::hash_public_key(&keypair.public);
-    let spartan: Spartan<PRIME_SIZE_BYTES, PIECE_SIZE> =
-        Spartan::<PRIME_SIZE_BYTES, PIECE_SIZE>::new(genesis_piece);
+    let spartan: Arc<Spartan<PRIME_SIZE_BYTES, PIECE_SIZE>> =
+        Arc::new(Spartan::<PRIME_SIZE_BYTES, PIECE_SIZE>::new(genesis_piece));
 
     if plot.is_empty().await {
-        let plotting_fut = utils::spawn_blocking({
+        let plotting_fut = {
             let plot = plot.clone();
 
-            move || {
-                let bar = ProgressBar::new(piece_count);
+            async move {
+                let (mut batch_sender, mut batch_receiver) = mpsc::channel(1);
 
-                (0..piece_count).into_par_iter().for_each(|index| {
-                    let encoding = spartan.encode(public_key_hash, index, ENCODE_ROUNDS);
+                std::thread::spawn(move || {
+                    let bar = ProgressBar::new(piece_count);
 
-                    task::spawn({
-                        let plot = plot.clone();
+                    for batch_start in (0..piece_count).step_by(BATCH_SIZE as usize) {
+                        let batch_end = (batch_start + BATCH_SIZE).min(piece_count);
+                        let encoded_batch: Vec<Piece> = (batch_start..batch_end)
+                            .into_par_iter()
+                            .map(|index| {
+                                let encoding =
+                                    spartan.encode(public_key_hash, index, ENCODE_ROUNDS);
 
-                        async move {
-                            let result = plot.write(encoding, index, salt).await;
+                                bar.inc(1);
 
-                            if let Err(error) = result {
-                                warn!("{}", error);
-                            }
+                                encoding
+                            })
+                            .collect();
+
+                        if futures::executor::block_on(
+                            batch_sender.send((batch_start, encoded_batch)),
+                        )
+                        .is_err()
+                        {
+                            return;
                         }
-                    });
-                    bar.inc(1);
-                });
+                    }
 
-                bar.finish();
+                    bar.finish();
+                });
+                while let Some((batch_start, encoded_batch)) = batch_receiver.next().await {
+                    let result = plot.write_many(encoded_batch, batch_start, salt).await;
+
+                    if let Err(error) = result {
+                        warn!("{}", error);
+                    }
+                }
             }
-        });
+        };
 
         let plot_time = Instant::now();
 
@@ -107,7 +127,7 @@ pub async fn plot(
         );
 
         info!(
-            "Plotting throughput is {} mb/sec\n",
+            "Plotting throughput is {} MB/sec\n",
             ((piece_count as u64 * PIECE_SIZE as u64) / (1000 * 1000)) as f32
                 / (total_plot_time.as_secs_f32())
         );
