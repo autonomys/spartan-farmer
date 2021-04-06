@@ -4,17 +4,15 @@
 </div>
 
 ## Overview
-
 **Notes:** The code is un-audited and not production ready, use it at your own risk.
 
-Subspace is a proof-of-storage blockchain that resolves the farmer's dilemma, to learn more read our <a href="https://drive.google.com/file/d/1v847u_XeVf0SBz7Y7LEMXi72QfqirstL/view">whitepaper</a>. 
+Subspace is a proof-of-storage blockchain that resolves the farmer's dilemma, to learn more read our [whitepaper](https://drive.google.com/file/d/1v847u_XeVf0SBz7Y7LEMXi72QfqirstL/view). 
 
-This a bare-bones farmer for the simplified Spartan proof-of-space variant of Subspace. A farmer is similar to a miner in a proof-of-work blockchain, but instead of wasting CPU cycles, it wastes disk space. Much of this code has been extracted from <a href="https://www.github.com/subspace/subspace-core-rust">subspace-core-rust</a>.
+This a bare-bones farmer for the simplified Spartan proof-of-space variant of Subspace. A farmer is similar to a miner in a proof-of-work blockchain, but instead of wasting CPU cycles, it wastes disk space. Much of this code has been based on [subspace-core-rust](https://www.github.com/subspace/subspace-core-rust).
 
 The farmer basically has two modes: plotting and farming.
 
 ### Plotting
-
 1. A genesis piece is created from a short seed.
 2. A new Schnorr key pair is generated, and the farmer ID is derived from the public key.
 3. New encodings are created by applying the time-asymmetric SLOTH permutation as `encode(genesis_piece, farmer_id, plot_index)`
@@ -24,7 +22,6 @@ The farmer basically has two modes: plotting and farming.
 This process currently takes ~ 36 hours per TB on a quad-core machine.
 
 ### Solving
-
 Once plotting is complete the farmer may join the network and participate in consensus.
 
 1. Connect to a client and subscribe to `slot_notifications` via JSON-RPC.
@@ -33,7 +30,6 @@ Once plotting is complete the farmer may join the network and participate in con
 4. If it within `SOLUTION_RANGE` return a `SOLUTION` else return `None`
 
 ## Install
-
 **Notes:** This will currently only work on Mac and Linux, not Windows.
 
 If you have not previously installed the `gmp_mpfr_sys` crate, follow these [instructions](https://docs.rs/gmp-mpfr-sys/1.3.0/gmp_mpfr_sys/index.html#building-on-gnulinux). 
@@ -43,23 +39,33 @@ RocksDB on Linux needs LLVM/Clang:
 sudo apt-get install llvm clang
 ```
 
+Then install the framer using Cargo:
 ```
-git clone https://github.com/subspace/spartan-farmer.git
-cd spartan-farmer
-cargo build --release
+cargo install spartan-farmer
 ```
 
 ## Usage
+Use `--help` to find out all available commands and their options:
+```
+spartan-farmer --help
+```
 
 ### Create a New Plot
+```
+spartan-farmer plot <optional parameters> <piece-count> <seed>
+```
 
-`cargo run plotter <optional path> <piece-count> <seed>`
+This will create a 1 GB plot:
+```
+spartan-farmer plot 256000 test
+```
 
-Creates a 1 GB plot
+For all supported options check help:
+```
+spartan-farmer plot --help
+```
 
-`cargo run plotter 256000 test`
-
-By default, plots are written to the users local data directory.
+By default, plots are written to the OS-specific users local data directory.
 
 ```
 Linux
@@ -74,11 +80,11 @@ Windows
 ```
 
 ### Start the farmer
+```
+RUST_LOG=debug spartan-farmer farm
+```
 
-`RUST_LOG=debug cargo run -- farm`
-
-**Notes:** You must delete the existing plot before creating a new one.
-
+This will connect to local node and will try to solve on every slot notification.
 
 
 
