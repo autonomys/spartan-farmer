@@ -56,9 +56,9 @@ pub async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::err
     info!("Subscribing to slot info notifications");
     let mut sub: Subscription<SlotInfo> = client
         .subscribe(
-            "babe_subscribeSlotInfo",
+            "poc_subscribeSlotInfo",
             Params::None,
-            "babe_unsubscribeSlotInfo",
+            "poc_unsubscribeSlotInfo",
         )
         .await?;
 
@@ -93,7 +93,7 @@ pub async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::err
 
         client
             .request(
-                "babe_proposeProofOfSpace",
+                "poc_proposeProofOfSpace",
                 Params::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
                     slot_number: slot_info.slot_number,
                     solution,
