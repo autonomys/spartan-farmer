@@ -1,6 +1,8 @@
 [package]
 name = "spartan-farmer"
-version = "0.0.1"
+description = "This a bare-bones farmer for the simplified Spartan proof-of-space variant of Subspace"
+license = "Apache-2.0"
+version = "0.1.0"
 authors = ["Nazar Mokrynskyi <nazar@mokrynskyi.com>"]
 edition = "2018"
 
