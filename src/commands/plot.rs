@@ -6,7 +6,7 @@ use indicatif::ProgressBar;
 use log::{info, warn};
 use rayon::prelude::*;
 use schnorrkel::Keypair;
-use spartan::Spartan;
+use spartan_codec::Spartan;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -1889,9 +1889,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "spartan"
-version = "0.0.0"
-source = "git+https://github.com/subspace/spartan.git#ab1e504cc21576cba78ad4351956ebb4f5650e86"
+name = "spartan-codec"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38c9ee58de0a3f898393546ee74c909d3b87ba285248db142e1d1ef03519ad19"
 dependencies = [
  "rayon",
  "rug",
@@ -1918,7 +1919,7 @@ dependencies = [
  "schnorrkel",
  "serde",
  "serde_json",
- "spartan",
+ "spartan-codec",
  "thiserror",
 ]
 
