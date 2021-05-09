@@ -55,7 +55,7 @@ Then install the framer using Cargo:
 cargo +nightly install spartan-farmer
 ```
 
-NOTE: Above command requires nightly compiler for now, make sure to install it if ou don't have one yet:
+NOTE: Above command requires nightly compiler for now, make sure to install it if you don't have one yet:
 ```
 rustup toolchain install nightly
 ```
