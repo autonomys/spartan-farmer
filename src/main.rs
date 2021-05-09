@@ -7,6 +7,7 @@ mod utils;
 
 use async_std::task;
 use clap::{Clap, ValueHint};
+use env_logger::Env;
 use log::info;
 use std::fs;
 use std::path::PathBuf;
@@ -52,7 +53,7 @@ enum Command {
 }
 
 fn main() {
-    env_logger::init();
+    env_logger::init_from_env(Env::new().default_filter_or("info"));
 
     let command: Command = Command::parse();
 
