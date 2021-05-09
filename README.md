@@ -52,7 +52,12 @@ sudo apt-get install llvm clang
 
 Then install the framer using Cargo:
 ```
-cargo install spartan-farmer
+cargo +nightly install spartan-farmer
+```
+
+NOTE: Above command requires nightly compiler for now, make sure to install it if ou don't have one yet:
+```
+rustup toolchain install nightly
 ```
 
 ## Usage

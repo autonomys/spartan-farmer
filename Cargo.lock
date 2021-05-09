@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "spartan-farmer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-global-executor",
  "async-std",
