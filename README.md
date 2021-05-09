@@ -29,7 +29,18 @@ Once plotting is complete the farmer may join the network and participate in con
 3. Query the BST for the nearest tag to the challenge.
 4. If it within `SOLUTION_RANGE` return a `SOLUTION` else return `None`
 
-## Install
+## Using Docker
+The simplest way to use spartan-farmer is to use container image:
+```bash
+docker volume create spartan-farmer
+docker run --rm -it --mount source=spartan-farmer,target=/tmp/spartan subspacelabs/spatran-farmer --help
+```
+
+`spartan-farmer` is the volume where plot and identity will be stored, it only needs to be created once.
+
+## Install (manually)
+Instead of Docker you can also install spartan-farmer natively by compiling it using cargo.
+
 **Notes:** This will currently only work on Mac and Linux, not Windows.
 
 If you have not previously installed the `gmp_mpfr_sys` crate, follow these [instructions](https://docs.rs/gmp-mpfr-sys/1.3.0/gmp_mpfr_sys/index.html#building-on-gnulinux). 
@@ -45,6 +56,8 @@ cargo install spartan-farmer
 ```
 
 ## Usage
+Commands here assume you installed native binary, but you can also easily adapt them to using with Docker.
+
 Use `--help` to find out all available commands and their options:
 ```
 spartan-farmer --help
