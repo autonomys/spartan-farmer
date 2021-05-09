@@ -1,7 +1,9 @@
 use crate::plot::Plot;
 use crate::{Tag, PRIME_SIZE_BYTES, SIGNING_CONTEXT};
-use jsonrpsee::client::Subscription;
-use jsonrpsee::common::Params;
+use futures::channel::oneshot;
+use jsonrpsee::ws_client::traits::{Client, SubscriptionClient};
+use jsonrpsee::ws_client::v2::params::JsonRpcParams;
+use jsonrpsee::ws_client::{Subscription, WsClientBuilder};
 use log::{debug, info, trace};
 use schnorrkel::Keypair;
 use serde::{Deserialize, Serialize};
@@ -36,7 +38,7 @@ struct SlotInfo {
 /// address.
 pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::error::Error>> {
     info!("Connecting to RPC server");
-    let client = jsonrpsee::ws_client(ws_server).await?;
+    let client = WsClientBuilder::default().build(&ws_server).await?;
 
     let identity_file = path.join("identity.bin");
     if !identity_file.exists() {
@@ -59,13 +61,12 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
     let mut sub: Subscription<SlotInfo> = client
         .subscribe(
             "poc_subscribeSlotInfo",
-            Params::None,
+            JsonRpcParams::NoParams,
             "poc_unsubscribeSlotInfo",
         )
         .await?;
 
-    loop {
-        let slot_info = sub.next().await;
+    while let Some(slot_info) = sub.next().await {
         debug!("New slot: {:?}", slot_info);
 
         let solution = match plot
@@ -96,7 +97,7 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
         client
             .request(
                 "poc_proposeProofOfSpace",
-                Params::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
+                JsonRpcParams::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
                     slot_number: slot_info.slot_number,
                     solution,
                 })
@@ -104,4 +105,16 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
             )
             .await?;
     }
+
+    let (tx, rx) = oneshot::channel();
+
+    let _handler = plot.on_close(move || {
+        let _ = tx.send(());
+    });
+
+    drop(plot);
+
+    rx.await?;
+
+    Ok(())
 }
