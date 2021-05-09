@@ -35,6 +35,9 @@ struct SlotInfo {
 /// Start farming by using plot in specified path and connecting to WebSocket server at specified
 /// address.
 pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Connecting to RPC server");
+    let client = jsonrpsee::ws_client(ws_server).await?;
+
     let identity_file = path.join("identity.bin");
     if !identity_file.exists() {
         panic!("Identity not found, please create it first using plot command");
@@ -51,9 +54,6 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
     if plot.is_empty().await {
         panic!("Plot is empty, please create it first using plot command");
     }
-
-    info!("Connecting to RPC server");
-    let client = jsonrpsee::ws_client(ws_server).await?;
 
     info!("Subscribing to slot info notifications");
     let mut sub: Subscription<SlotInfo> = client
