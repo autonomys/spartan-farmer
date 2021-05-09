@@ -33,7 +33,7 @@ Once plotting is complete the farmer may join the network and participate in con
 The simplest way to use spartan-farmer is to use container image:
 ```bash
 docker volume create spartan-farmer
-docker run --rm -it --mount source=spartan-farmer,target=/tmp/spartan subspacelabs/spartan-farmer --help
+docker run --rm -it --mount source=spartan-farmer,target=/var/spartan subspacelabs/spartan-farmer --help
 ```
 
 `spartan-farmer` is the volume where plot and identity will be stored, it only needs to be created once.
