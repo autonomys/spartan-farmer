@@ -3,8 +3,8 @@ use ring::{digest, hmac};
 use schnorrkel::PublicKey;
 use std::io::Write;
 
-pub fn genesis_piece_from_seed(seed: &str) -> Piece {
-    // TODO: This is not efficient
+pub(crate) fn genesis_piece_from_seed(seed: &str) -> Piece {
+    // This is not efficient, but it also doesn't matter as it is called just once
     let mut piece = [0u8; PIECE_SIZE];
     let mut input = seed.as_bytes().to_vec();
     for mut chunk in piece.chunks_mut(digest::SHA256.output_len) {

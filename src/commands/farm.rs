@@ -32,7 +32,9 @@ struct SlotInfo {
     solution_range: u64,
 }
 
-pub async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::error::Error>> {
+/// Start farming by using plot in specified path and connecting to WebSocket server at specified
+/// address.
+pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::error::Error>> {
     let identity_file = path.join("identity.bin");
     if !identity_file.exists() {
         panic!("Identity not found, please create it first using plot command");

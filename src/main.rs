@@ -64,7 +64,7 @@ fn main() {
             seed,
         } => {
             let path = utils::get_path(custom_path);
-            task::block_on(commands::plot::plot(
+            task::block_on(commands::plot(
                 path,
                 crypto::genesis_piece_from_seed(&seed),
                 plot_pieces,
@@ -87,7 +87,7 @@ fn main() {
             ws_server,
         } => {
             let path = utils::get_path(custom_path);
-            task::block_on(commands::farm::farm(path, &ws_server)).unwrap();
+            task::block_on(commands::farm(path, &ws_server)).unwrap();
         }
     }
 }

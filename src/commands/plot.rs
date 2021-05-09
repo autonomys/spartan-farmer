@@ -14,7 +14,8 @@ use std::time::Instant;
 
 const BATCH_SIZE: u64 = (16 * 1024 * 1204 / PIECE_SIZE) as u64;
 
-pub async fn plot(
+/// Create a new plot with specified genesis piece, piece count and salt.
+pub(crate) async fn plot(
     path: PathBuf,
     genesis_piece: Piece,
     piece_count: u64,

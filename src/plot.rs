@@ -12,12 +12,11 @@ use rocksdb::DB;
 use std::convert::TryInto;
 use std::io;
 use std::io::SeekFrom;
-use std::ops::Deref;
 use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum PlotCreationError {
+pub(crate) enum PlotCreationError {
     #[error("Plot open error: {0}")]
     PlotOpen(io::Error),
     #[error("Plot tags open error: {0}")]
@@ -55,7 +54,7 @@ struct Handlers {
     close: BagOnce<Box<dyn FnOnce() + Send>>,
 }
 
-pub struct Inner {
+struct Inner {
     handlers: Arc<Handlers>,
     any_requests_sender: async_mpsc::Sender<()>,
     read_requests_sender: async_mpsc::Sender<ReadRequests>,
@@ -63,13 +62,13 @@ pub struct Inner {
 }
 
 #[derive(Clone)]
-pub struct Plot {
+pub(crate) struct Plot {
     inner: Arc<Inner>,
 }
 
 impl Plot {
     /// Creates a new plot for persisting encoded pieces to disk
-    pub async fn open_or_create(path: &PathBuf) -> Result<Plot, PlotCreationError> {
+    pub(crate) async fn open_or_create(path: &PathBuf) -> Result<Plot, PlotCreationError> {
         let mut plot_file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -301,17 +300,18 @@ impl Plot {
         })
     }
 
-    pub async fn is_empty(&self) -> bool {
+    pub(crate) async fn is_empty(&self) -> bool {
         let (result_sender, result_receiver) = oneshot::channel();
 
-        self.read_requests_sender
+        self.inner
+            .read_requests_sender
             .clone()
             .send(ReadRequests::IsEmpty { result_sender })
             .await
             .expect("Failed sending read request");
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
-        let _ = self.any_requests_sender.clone().try_send(());
+        let _ = self.inner.any_requests_sender.clone().try_send(());
 
         result_receiver
             .await
@@ -319,10 +319,11 @@ impl Plot {
     }
 
     /// Reads a piece from plot by index
-    pub async fn read(&self, index: u64) -> io::Result<Piece> {
+    pub(crate) async fn read(&self, index: u64) -> io::Result<Piece> {
         let (result_sender, result_receiver) = oneshot::channel();
 
-        self.read_requests_sender
+        self.inner
+            .read_requests_sender
             .clone()
             .send(ReadRequests::ReadEncoding {
                 index,
@@ -332,21 +333,22 @@ impl Plot {
             .expect("Failed sending read encoding request");
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
-        let _ = self.any_requests_sender.clone().try_send(());
+        let _ = self.inner.any_requests_sender.clone().try_send(());
 
         result_receiver
             .await
             .expect("Read encoding result sender was dropped")
     }
 
-    pub async fn find_by_range(
+    pub(crate) async fn find_by_range(
         &self,
         target: [u8; 8],
         range: u64,
     ) -> io::Result<Option<(Tag, u64)>> {
         let (result_sender, result_receiver) = oneshot::channel();
 
-        self.read_requests_sender
+        self.inner
+            .read_requests_sender
             .clone()
             .send(ReadRequests::FindByRange {
                 target,
@@ -357,7 +359,7 @@ impl Plot {
             .expect("Failed sending get by range request");
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
-        let _ = self.any_requests_sender.clone().try_send(());
+        let _ = self.inner.any_requests_sender.clone().try_send(());
 
         result_receiver
             .await
@@ -365,7 +367,7 @@ impl Plot {
     }
 
     /// Writes a piece to the plot by index, will overwrite if piece exists (updates)
-    pub async fn write_many(
+    pub(crate) async fn write_many(
         &self,
         encodings: Vec<Piece>,
         first_index: u64,
@@ -376,7 +378,8 @@ impl Plot {
         }
         let (result_sender, result_receiver) = oneshot::channel();
 
-        self.write_requests_sender
+        self.inner
+            .write_requests_sender
             .clone()
             .send(WriteRequests::WriteEncodings {
                 encodings,
@@ -388,23 +391,17 @@ impl Plot {
             .expect("Failed sending write encoding request");
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
-        let _ = self.any_requests_sender.clone().try_send(());
+        let _ = self.inner.any_requests_sender.clone().try_send(());
 
         result_receiver
             .await
             .expect("Write encoding result sender was dropped")
     }
 
-    pub fn on_close<F: FnOnce() + Send + 'static>(&self, callback: F) -> HandlerId {
+    /// Run callback when plot is closed, can be used to handle graceful shutdown since plot will be
+    /// closed on drop asynchronously and thus requires extra care to be handled properly.
+    pub(crate) fn on_close<F: FnOnce() + Send + 'static>(&self, callback: F) -> HandlerId {
         self.inner.handlers.close.add(Box::new(callback))
-    }
-}
-
-impl Deref for Plot {
-    type Target = Inner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
@@ -414,6 +411,7 @@ mod tests {
     use async_std::path::PathBuf;
     use rand::prelude::*;
     use std::fs;
+    use std::ops::Deref;
     use std::time::Duration;
 
     struct TargetDirectory {

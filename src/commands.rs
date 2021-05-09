@@ -1,2 +1,5 @@
-pub mod farm;
-pub mod plot;
+mod farm;
+mod plot;
+
+pub(crate) use farm::farm;
+pub(crate) use plot::plot;
