@@ -133,6 +133,7 @@ pub async fn plot(
         );
     } else {
         info!("Using existing plot...");
+        info!("NOTE: Use erase-plot command if you want to re-plot before running plot again.");
 
         let (tx, rx) = oneshot::channel();
 
