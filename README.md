@@ -19,7 +19,7 @@ The farmer basically has two modes: plotting and farming.
 4. Each encoding is written directly to disk.
 5. A commitment, or tag, to each encoding is created as `hmac(encoding, salt)` and stored within a binary search tree (BST).
 
-This process currently takes ~ 36 hours per TB on a quad-core machine.
+This process currently takes ~ 36 hours per TiB on a quad-core machine, but for 1 GiB plotting should take between a few seconds and a few minutes.
 
 ### Solving
 Once plotting is complete the farmer may join the network and participate in consensus.
@@ -103,6 +103,8 @@ RUST_LOG=debug spartan-farmer farm
 ```
 
 This will connect to local node and will try to solve on every slot notification.
+
+*NOTE: You need to have node running before starting farmer, otherwise it will not be able to start*
 
 
 
