@@ -28,3 +28,10 @@ pub(crate) fn create_hmac(message: &[u8], key: &[u8]) -> [u8; 32] {
     array.copy_from_slice(&hmac[0..32]);
     array
 }
+
+pub(crate) fn hash_challenge(data: [u8; PRIME_SIZE_BYTES]) -> [u8; PRIME_SIZE_BYTES] {
+    let mut array = [0u8; PRIME_SIZE_BYTES];
+    let hash = digest::digest(&digest::SHA256, &data);
+    array.copy_from_slice(&hash.as_ref()[0..PRIME_SIZE_BYTES]);
+    array
+}

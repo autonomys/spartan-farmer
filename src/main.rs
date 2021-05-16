@@ -64,6 +64,12 @@ enum Command {
         #[clap(long, default_value = "ws://127.0.0.1:9944")]
         ws_server: String,
     },
+    /// Start a farmer to test dynamic solution range settings
+    Sim {
+        /// Use custom path for data storage instead of platform-specific default
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        custom_path: Option<PathBuf>,
+    }
 }
 
 fn main() {
@@ -102,6 +108,12 @@ fn main() {
         } => {
             let path = utils::get_path(custom_path);
             task::block_on(commands::farm(path, &ws_server)).unwrap();
+        },
+        Command::Sim {
+            custom_path,
+        } => {
+            let path = utils::get_path(custom_path);
+            task::block_on(commands::sim::sim(path)).unwrap();
         }
     }
 }
