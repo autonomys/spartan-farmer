@@ -282,6 +282,10 @@ impl Plot {
                     }
                 }
 
+                if let Err(error) = plot_file.sync_all().await {
+                    error!("Failed to sync plot file before exit: {}", error);
+                }
+
                 std::thread::spawn({
                     let handlers = Arc::clone(&handlers);
 
