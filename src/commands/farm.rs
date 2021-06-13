@@ -1,12 +1,14 @@
 use crate::plot::Plot;
-use crate::{Tag, PRIME_SIZE_BYTES, SIGNING_CONTEXT};
+use crate::{crypto, Tag, PRIME_SIZE_BYTES, SIGNING_CONTEXT};
 use futures::channel::oneshot;
 use jsonrpsee::ws_client::traits::{Client, SubscriptionClient};
 use jsonrpsee::ws_client::v2::params::JsonRpcParams;
 use jsonrpsee::ws_client::{Subscription, WsClientBuilder};
 use log::{debug, info, trace};
+use ring::digest;
 use schnorrkel::Keypair;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::fs;
 use std::path::PathBuf;
 
@@ -48,6 +50,7 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
     info!("Opening existing keypair");
     let keypair =
         Keypair::from_bytes(&fs::read(identity_file)?).map_err(|error| error.to_string())?;
+    let public_key_hash = crypto::hash_public_key(&keypair.public);
     let ctx = schnorrkel::context::signing_context(SIGNING_CONTEXT);
 
     info!("Opening plot");
@@ -69,8 +72,10 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
     while let Some(slot_info) = sub.next().await {
         debug!("New slot: {:?}", slot_info);
 
+        let local_challenge = derive_local_challenge(&slot_info.challenge, &public_key_hash);
+
         let solution = match plot
-            .find_by_range(slot_info.challenge, slot_info.solution_range)
+            .find_by_range(local_challenge, slot_info.solution_range)
             .await?
         {
             Some((tag, index)) => {
@@ -117,4 +122,16 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
     rx.await?;
 
     Ok(())
+}
+
+fn derive_local_challenge(global_challenge: &[u8], farmer_id: &[u8]) -> [u8; 8] {
+    digest::digest(&digest::SHA256, &{
+        let mut data = Vec::with_capacity(global_challenge.len() + farmer_id.len());
+        data.extend_from_slice(global_challenge);
+        data.extend_from_slice(farmer_id);
+        data
+    })
+    .as_ref()[..8]
+        .try_into()
+        .unwrap()
 }
