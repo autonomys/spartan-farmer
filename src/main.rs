@@ -28,13 +28,13 @@ use std::path::PathBuf;
 
 type Piece = [u8; PIECE_SIZE];
 type Tag = [u8; PRIME_SIZE_BYTES];
-type Salt = [u8; 32];
+type Salt = [u8; PRIME_SIZE_BYTES];
 
 const PRIME_SIZE_BYTES: usize = 8;
 const PIECE_SIZE: usize = 4096;
 const ENCODE_ROUNDS: usize = 1;
-// TODO: Replace fixed salt with something
-const SALT: Salt = [1u8; 32];
+// TODO: Replace with information retrieved from RPC
+const SALT: Salt = [0u8; 8];
 const SIGNING_CONTEXT: &[u8] = b"FARMER";
 
 #[derive(Debug, Clap)]

@@ -1,5 +1,5 @@
 use crate::plot::Plot;
-use crate::{crypto, Tag, PRIME_SIZE_BYTES, SIGNING_CONTEXT};
+use crate::{crypto, Salt, Tag, PRIME_SIZE_BYTES, SIGNING_CONTEXT};
 use futures::channel::oneshot;
 use jsonrpsee::ws_client::traits::{Client, SubscriptionClient};
 use jsonrpsee::ws_client::v2::params::JsonRpcParams;
@@ -33,6 +33,8 @@ struct ProposedProofOfSpaceResponse {
 struct SlotInfo {
     slot_number: SlotNumber,
     challenge: [u8; PRIME_SIZE_BYTES],
+    // TODO: Use salt
+    salt: Salt,
     solution_range: u64,
 }
 
