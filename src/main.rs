@@ -13,6 +13,7 @@
 //! target as 64-bit unsigned integer, and find all of the keys in tags database that are
 //! `target ± solution range` (while also handing overflow/underlow) converted back to bytes.
 #![feature(try_blocks)]
+#![feature(hash_drain_filter)]
 
 mod commands;
 mod crypto;

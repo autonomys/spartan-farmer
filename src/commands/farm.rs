@@ -1,10 +1,11 @@
 use crate::plot::Plot;
 use crate::{crypto, Salt, Tag, PRIME_SIZE_BYTES, SIGNING_CONTEXT};
+use async_std::task;
 use futures::channel::oneshot;
 use jsonrpsee::ws_client::traits::{Client, SubscriptionClient};
 use jsonrpsee::ws_client::v2::params::JsonRpcParams;
 use jsonrpsee::ws_client::{Subscription, WsClientBuilder};
-use log::{debug, info, trace};
+use log::{debug, error, info, trace, warn};
 use ring::digest;
 use schnorrkel::Keypair;
 use serde::{Deserialize, Serialize};
@@ -37,7 +38,6 @@ struct SlotInfo {
     slot_number: SlotNumber,
     /// Slot challenge
     challenge: [u8; PRIME_SIZE_BYTES],
-    // TODO: Use salt
     /// Salt
     salt: Salt,
     /// Salt for the next eon
@@ -79,28 +79,102 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
         )
         .await?;
 
-    let mut last_salt = None;
+    // TODO: Add cleanup mechanism for old commitments after restart
+    let mut current_salt = None;
+    let mut next_salt = None;
 
     while let Some(slot_info) = sub.next().await {
         debug!("New slot: {:?}", slot_info);
 
-        // TODO: This should ideally run in the background and support recommitting to the next salt
-        //  in the background
-        if last_salt != Some(slot_info.salt) {
-            let started = Instant::now();
-            info!("Salt update, recommitting");
-            plot.recommit(slot_info.salt).await?;
-            last_salt.replace(slot_info.salt);
-            info!(
-                "Finished recommittment in {} seconds",
-                started.elapsed().as_secs_f32()
-            );
+        if current_salt != Some(slot_info.salt) {
+            if next_salt == Some(slot_info.salt) {
+                let old_salt = current_salt.replace(slot_info.salt);
+                if let Some(old_salt) = old_salt {
+                    info!("Salt is out of date, removing commitment");
+
+                    task::spawn({
+                        let plot = plot.clone();
+
+                        async move {
+                            if let Err(error) = plot.remove_commitment(old_salt).await {
+                                error!("Failed to remove old commitment: {}", error);
+                            }
+                        }
+                    })
+                    .await;
+                }
+            } else {
+                let started = Instant::now();
+                info!("Salt update, recommitting");
+                if let Err(error) = plot.create_commitment(slot_info.salt).await {
+                    error!("Failed to create commitment: {}", error);
+                    continue;
+                }
+                let old_salt = current_salt.replace(slot_info.salt);
+                if let Some(old_salt) = old_salt {
+                    warn!("New salt is not the same as previously known next salt");
+                    info!("Salt is out of date, removing commitment");
+
+                    task::spawn({
+                        let plot = plot.clone();
+
+                        async move {
+                            if let Err(error) = plot.remove_commitment(old_salt).await {
+                                error!("Failed to remove old commitment: {}", error);
+                            }
+                        }
+                    })
+                    .await;
+                }
+                info!(
+                    "Finished recommitment in {} seconds",
+                    started.elapsed().as_secs_f32()
+                );
+            }
+        }
+        if let Some(new_next_salt) = slot_info.next_salt {
+            if Some(new_next_salt) != next_salt {
+                let old_salt = next_salt.replace(new_next_salt);
+                if old_salt != current_salt {
+                    if let Some(old_salt) = old_salt {
+                        warn!("Previous next salt is out of date, removing commitment");
+
+                        task::spawn({
+                            let plot = plot.clone();
+
+                            async move {
+                                if let Err(error) = plot.remove_commitment(old_salt).await {
+                                    error!("Failed to remove old commitment: {}", error);
+                                }
+                            }
+                        })
+                        .await;
+                    }
+                }
+
+                task::spawn({
+                    let plot = plot.clone();
+
+                    async move {
+                        let started = Instant::now();
+                        info!("Salt will update soon, recommitting in background");
+                        if let Err(error) = plot.create_commitment(new_next_salt).await {
+                            error!("Recommitting salt in background failed: {}", error);
+                            return;
+                        }
+                        info!(
+                            "Finished recommitment in background in {} seconds",
+                            started.elapsed().as_secs_f32()
+                        );
+                    }
+                });
+            }
         }
 
         let local_challenge = derive_local_challenge(&slot_info.challenge, &public_key_hash);
 
         let solution = match plot
-            .find_by_range(local_challenge, slot_info.solution_range)
+            .find_by_range(local_challenge, slot_info.solution_range, slot_info.salt)
             .await?
         {
             Some((tag, index)) => {
