@@ -29,12 +29,19 @@ struct ProposedProofOfSpaceResponse {
     solution: Option<Solution>,
 }
 
+/// Information about new slot that just arrived
 #[derive(Debug, Deserialize)]
 struct SlotInfo {
+    /// Slot number
     slot_number: SlotNumber,
+    /// Slot challenge
     challenge: [u8; PRIME_SIZE_BYTES],
     // TODO: Use salt
+    /// Salt
     salt: Salt,
+    /// Salt for the next eon
+    next_salt: Option<Salt>,
+    /// Acceptable solution range
     solution_range: u64,
 }
 
