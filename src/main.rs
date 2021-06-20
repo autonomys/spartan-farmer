@@ -33,9 +33,8 @@ type Salt = [u8; PRIME_SIZE_BYTES];
 const PRIME_SIZE_BYTES: usize = 8;
 const PIECE_SIZE: usize = 4096;
 const ENCODE_ROUNDS: usize = 1;
-// TODO: Replace with information retrieved from RPC
-const SALT: Salt = [0u8; 8];
 const SIGNING_CONTEXT: &[u8] = b"FARMER";
+const BATCH_SIZE: u64 = (16 * 1024 * 1204 / PIECE_SIZE) as u64;
 
 #[derive(Debug, Clap)]
 #[clap(about, version)]
@@ -82,7 +81,6 @@ fn main() {
                 path,
                 crypto::genesis_piece_from_seed(&seed),
                 plot_pieces,
-                SALT,
             ))
             .unwrap();
         }

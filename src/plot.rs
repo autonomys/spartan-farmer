@@ -1,4 +1,4 @@
-use crate::{crypto, utils, Piece, Salt, Tag, PIECE_SIZE};
+use crate::{crypto, utils, Piece, Salt, Tag, BATCH_SIZE, PIECE_SIZE};
 use async_std::fs::OpenOptions;
 use async_std::path::PathBuf;
 use async_std::task;
@@ -7,11 +7,12 @@ use futures::channel::mpsc as async_mpsc;
 use futures::channel::oneshot;
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SinkExt, StreamExt};
 use log::*;
-use rocksdb::IteratorMode;
+use rayon::prelude::*;
 use rocksdb::DB;
 use std::convert::TryInto;
 use std::io;
 use std::io::SeekFrom;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -19,18 +20,23 @@ use thiserror::Error;
 pub(crate) enum PlotCreationError {
     #[error("Plot open error: {0}")]
     PlotOpen(io::Error),
+    #[error("Plot metadata error: {0}")]
+    PlotMetadata(io::Error),
     #[error("Plot tags open error: {0}")]
     PlotTagsOpen(rocksdb::Error),
 }
 
 #[derive(Debug)]
 enum ReadRequests {
-    IsEmpty {
-        result_sender: oneshot::Sender<bool>,
-    },
     ReadEncoding {
         index: u64,
         result_sender: oneshot::Sender<io::Result<Piece>>,
+    },
+    ReadEncodings {
+        first_index: u64,
+        count: u64,
+        /// Vector containing all of the pieces as contiguous block of memory
+        result_sender: oneshot::Sender<io::Result<Vec<u8>>>,
     },
     FindByRange {
         target: Tag,
@@ -44,7 +50,11 @@ enum WriteRequests {
     WriteEncodings {
         encodings: Vec<Piece>,
         first_index: u64,
-        salt: Salt,
+        result_sender: oneshot::Sender<io::Result<()>>,
+    },
+    WriteTags {
+        first_index: u64,
+        tags: Vec<Tag>,
         result_sender: oneshot::Sender<io::Result<()>>,
     },
 }
@@ -59,6 +69,7 @@ struct Inner {
     any_requests_sender: async_mpsc::Sender<()>,
     read_requests_sender: async_mpsc::Sender<ReadRequests>,
     write_requests_sender: async_mpsc::Sender<WriteRequests>,
+    piece_count: Arc<AtomicU64>,
 }
 
 /// `Plot` struct is an abstraction on top of both plot and tags database. It converts async
@@ -83,6 +94,13 @@ impl Plot {
             .await
             .map_err(PlotCreationError::PlotOpen)?;
 
+        let plot_size = plot_file
+            .metadata()
+            .await
+            .map_err(PlotCreationError::PlotMetadata)?
+            .len();
+        let piece_count = Arc::new(AtomicU64::new(plot_size / PIECE_SIZE as u64));
+
         let tags_db = Arc::new(
             DB::open_default(path.join("plot-tags")).map_err(PlotCreationError::PlotTagsOpen)?,
         );
@@ -98,6 +116,7 @@ impl Plot {
 
         task::spawn({
             let handlers = Arc::clone(&handlers);
+            let piece_count = Arc::clone(&piece_count);
 
             async move {
                 let mut did_nothing = true;
@@ -116,17 +135,6 @@ impl Plot {
                         did_nothing = false;
 
                         match read_request {
-                            Some(ReadRequests::IsEmpty { result_sender }) => {
-                                let _ = result_sender.send(
-                                    utils::spawn_blocking({
-                                        let tags_db = Arc::clone(&tags_db);
-                                        move || {
-                                            tags_db.iterator(IteratorMode::Start).next().is_none()
-                                        }
-                                    })
-                                    .await,
-                                );
-                            }
                             Some(ReadRequests::ReadEncoding {
                                 index,
                                 result_sender,
@@ -137,6 +145,24 @@ impl Plot {
                                             .seek(SeekFrom::Start(index * PIECE_SIZE as u64))
                                             .await?;
                                         let mut buffer = [0u8; PIECE_SIZE];
+                                        plot_file.read_exact(&mut buffer).await?;
+                                        buffer
+                                    },
+                                );
+                            }
+                            Some(ReadRequests::ReadEncodings {
+                                first_index,
+                                count,
+                                result_sender,
+                            }) => {
+                                let _ = result_sender.send(
+                                    try {
+                                        plot_file
+                                            .seek(SeekFrom::Start(first_index * PIECE_SIZE as u64))
+                                            .await?;
+                                        let mut buffer =
+                                            Vec::with_capacity(count as usize * PIECE_SIZE);
+                                        buffer.resize(buffer.capacity(), 0);
                                         plot_file.read_exact(&mut buffer).await?;
                                         buffer
                                     },
@@ -236,7 +262,6 @@ impl Plot {
                         Ok(Some(WriteRequests::WriteEncodings {
                             encodings,
                             first_index,
-                            salt,
                             result_sender,
                         })) => {
                             let _ = result_sender.send(
@@ -252,17 +277,27 @@ impl Plot {
                                             whole_encoding.extend_from_slice(encoding);
                                         }
                                         plot_file.write_all(&whole_encoding).await?;
+                                        piece_count.fetch_max(
+                                            first_index + encodings.len() as u64,
+                                            Ordering::AcqRel,
+                                        );
                                     }
-
+                                },
+                            );
+                        }
+                        Ok(Some(WriteRequests::WriteTags {
+                            first_index,
+                            tags,
+                            result_sender,
+                        })) => {
+                            let _ = result_sender.send(
+                                try {
                                     // TODO: remove unwrap
                                     utils::spawn_blocking({
                                         let tags_db = Arc::clone(&tags_db);
                                         move || {
-                                            for (encoding, index) in
-                                                encodings.iter().zip(first_index..)
-                                            {
-                                                let tag = crypto::create_hmac(encoding, &salt);
-                                                tags_db.put(&tag[0..8], index.to_le_bytes())?;
+                                            for (tag, index) in tags.iter().zip(first_index..) {
+                                                tags_db.put(tag, index.to_le_bytes())?;
                                             }
 
                                             Ok::<(), rocksdb::Error>(())
@@ -303,6 +338,7 @@ impl Plot {
             any_requests_sender,
             read_requests_sender,
             write_requests_sender,
+            piece_count,
         };
 
         Ok(Plot {
@@ -312,21 +348,7 @@ impl Plot {
 
     /// Whether plot doesn't have anything in it
     pub(crate) async fn is_empty(&self) -> bool {
-        let (result_sender, result_receiver) = oneshot::channel();
-
-        self.inner
-            .read_requests_sender
-            .clone()
-            .send(ReadRequests::IsEmpty { result_sender })
-            .await
-            .expect("Failed sending read request");
-
-        // If fails - it is either full or disconnected, we don't care either way, so ignore result
-        let _ = self.inner.any_requests_sender.clone().try_send(());
-
-        result_receiver
-            .await
-            .expect("Read result sender was dropped")
+        self.inner.piece_count.load(Ordering::Acquire) == 0
     }
 
     /// Reads a piece from plot by index
@@ -341,14 +363,22 @@ impl Plot {
                 result_sender,
             })
             .await
-            .expect("Failed sending read encoding request");
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed sending read encoding request: {}", error),
+                )
+            })?;
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
         let _ = self.inner.any_requests_sender.clone().try_send(());
 
-        result_receiver
-            .await
-            .expect("Read encoding result sender was dropped")
+        result_receiver.await.map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Read encoding result sender was dropped: {}", error),
+            )
+        })?
     }
 
     /// Find pieces within specified solution range.
@@ -370,14 +400,22 @@ impl Plot {
                 result_sender,
             })
             .await
-            .expect("Failed sending get by range request");
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed sending get by range request: {}", error),
+                )
+            })?;
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
         let _ = self.inner.any_requests_sender.clone().try_send(());
 
-        result_receiver
-            .await
-            .expect("Get by range result sender was dropped")
+        result_receiver.await.map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Get by range result sender was dropped: {}", error),
+            )
+        })?
     }
 
     /// Writes a piece to the plot by index, will overwrite if piece exists (updates)
@@ -385,7 +423,6 @@ impl Plot {
         &self,
         encodings: Vec<Piece>,
         first_index: u64,
-        salt: Salt,
     ) -> io::Result<()> {
         if encodings.is_empty() {
             return Ok(());
@@ -398,24 +435,110 @@ impl Plot {
             .send(WriteRequests::WriteEncodings {
                 encodings,
                 first_index,
-                salt,
                 result_sender,
             })
             .await
-            .expect("Failed sending write encoding request");
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed sending write many request: {}", error),
+                )
+            })?;
 
         // If fails - it is either full or disconnected, we don't care either way, so ignore result
         let _ = self.inner.any_requests_sender.clone().try_send(());
 
-        result_receiver
-            .await
-            .expect("Write encoding result sender was dropped")
+        result_receiver.await.map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Write many result sender was dropped: {}", error),
+            )
+        })?
+    }
+
+    // TODO: Probably should also accept a parameter if that is old or new salt
+    pub(crate) async fn recommit(&self, salt: Salt) -> io::Result<()> {
+        // NOTE: This assumes plot never shrinks in runtime
+        let piece_count = self.inner.piece_count.load(Ordering::Acquire);
+        for batch_start in (0..piece_count).step_by(BATCH_SIZE as usize) {
+            let pieces_to_process = (batch_start + BATCH_SIZE).min(piece_count) - batch_start;
+            let pieces = self.read_pieces(batch_start, pieces_to_process).await?;
+
+            let tags: Vec<Tag> = utils::spawn_blocking(move || {
+                pieces
+                    .chunks(PIECE_SIZE)
+                    .par_bridge()
+                    .map(|piece| crypto::create_hmac(piece, &salt)[..8].try_into().unwrap())
+                    .collect()
+            })
+            .await;
+
+            let (result_sender, result_receiver) = oneshot::channel();
+
+            self.inner
+                .write_requests_sender
+                .clone()
+                .send(WriteRequests::WriteTags {
+                    first_index: batch_start,
+                    tags,
+                    result_sender,
+                })
+                .await
+                .map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Failed sending write tags request: {}", error),
+                    )
+                })?;
+
+            // If fails - it is either full or disconnected, we don't care either way, so ignore result
+            let _ = self.inner.any_requests_sender.clone().try_send(());
+
+            result_receiver.await.map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Write tags result sender was dropped: {}", error),
+                )
+            })??;
+        }
+
+        Ok(())
     }
 
     /// Run callback when plot is closed, can be used to handle graceful shutdown since plot will be
     /// closed on drop asynchronously and thus requires extra care to be handled properly.
     pub(crate) fn on_close<F: FnOnce() + Send + 'static>(&self, callback: F) -> HandlerId {
         self.inner.handlers.close.add(Box::new(callback))
+    }
+
+    async fn read_pieces(&self, first_index: u64, count: u64) -> io::Result<Vec<u8>> {
+        let (result_sender, result_receiver) = oneshot::channel();
+
+        self.inner
+            .read_requests_sender
+            .clone()
+            .send(ReadRequests::ReadEncodings {
+                first_index,
+                count,
+                result_sender,
+            })
+            .await
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed sending read encodings request: {}", error),
+                )
+            })?;
+
+        // If fails - it is either full or disconnected, we don't care either way, so ignore result
+        let _ = self.inner.any_requests_sender.clone().try_send(());
+
+        result_receiver.await.map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Read encodings result sender was dropped: {}", error),
+            )
+        })?
     }
 }
 
@@ -472,12 +595,13 @@ mod tests {
         let path = TargetDirectory::new("read_write");
 
         let piece = generate_random_piece();
-        let salt: Salt = [1u8; 32];
+        let salt: Salt = [1u8; 8];
         let index = 0;
 
         let plot = Plot::open_or_create(&path).await.unwrap();
         assert_eq!(true, plot.is_empty().await);
-        plot.write_many(vec![piece], index, salt).await.unwrap();
+        plot.write_many(vec![piece], index).await.unwrap();
+        plot.recommit(salt).await.unwrap();
         assert_eq!(false, plot.is_empty().await);
         let extracted_piece = plot.read(index).await.unwrap();
 
@@ -501,17 +625,18 @@ mod tests {
     async fn test_find_by_tag() {
         init();
         let path = TargetDirectory::new("find_by_tag");
-        let salt: Salt = [1u8; 32];
+        let salt: Salt = [1u8; 8];
 
         let plot = Plot::open_or_create(&path).await.unwrap();
 
         plot.write_many(
             (0..1024_usize).map(|_| generate_random_piece()).collect(),
             0,
-            salt,
         )
         .await
         .unwrap();
+
+        plot.recommit(salt).await.unwrap();
 
         {
             let target = [0u8, 0, 0, 0, 0, 0, 0, 1];

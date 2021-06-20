@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Instant;
 
 type SlotNumber = u64;
 
@@ -78,8 +79,23 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
         )
         .await?;
 
+    let mut last_salt = None;
+
     while let Some(slot_info) = sub.next().await {
         debug!("New slot: {:?}", slot_info);
+
+        // TODO: This should ideally run in the background and support recommitting to the next salt
+        //  in the background
+        if last_salt != Some(slot_info.salt) {
+            let started = Instant::now();
+            info!("Salt update, recommitting");
+            plot.recommit(slot_info.salt).await?;
+            last_salt.replace(slot_info.salt);
+            info!(
+                "Finished recommittment in {} seconds",
+                started.elapsed().as_secs_f32()
+            );
+        }
 
         let local_challenge = derive_local_challenge(&slot_info.challenge, &public_key_hash);
 
