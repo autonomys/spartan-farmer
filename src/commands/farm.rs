@@ -100,7 +100,10 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
             if next_salt == Some(slot_info.salt) {
                 let old_salt = current_salt.replace(slot_info.salt);
                 if let Some(old_salt) = old_salt {
-                    info!("Salt {:?} is out of date, removing commitment", old_salt);
+                    info!(
+                        "Salt {} is out of date, removing commitment",
+                        hex::encode(old_salt)
+                    );
 
                     task::spawn({
                         let plot = plot.clone();
@@ -108,8 +111,9 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                         async move {
                             if let Err(error) = plot.remove_commitment(old_salt).await {
                                 error!(
-                                    "Failed to remove old commitment for {:?}: {}",
-                                    old_salt, error
+                                    "Failed to remove old commitment for {}: {}",
+                                    hex::encode(old_salt),
+                                    error
                                 );
                             }
                         }
@@ -118,23 +122,44 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                 }
             } else {
                 // `next_salt` is not the same as new salt, need to re-commit
-                let started = Instant::now();
-                // TODO: Do this in background so that we can solve in the meantime
-                info!("Salt updated to {:?}, recommitting", slot_info.salt);
-                if let Err(error) = plot.create_commitment(slot_info.salt).await {
-                    error!(
-                        "Failed to create commitment for {:?}: {}",
-                        slot_info.salt, error
-                    );
-                    continue;
-                }
+                task::spawn({
+                    let salt = slot_info.salt;
+                    let plot = plot.clone();
+
+                    async move {
+                        let started = Instant::now();
+                        info!(
+                            "Salt updated to {}, recommitting in background",
+                            hex::encode(salt)
+                        );
+
+                        if let Err(error) = plot.create_commitment(salt).await {
+                            error!(
+                                "Failed to create commitment for {}: {}",
+                                hex::encode(salt),
+                                error
+                            );
+                        } else {
+                            info!(
+                                "Finished recommitment for {} in {} seconds",
+                                hex::encode(salt),
+                                started.elapsed().as_secs_f32()
+                            );
+                        }
+                    }
+                });
+
                 let old_salt = current_salt.replace(slot_info.salt);
                 if let Some(old_salt) = old_salt {
                     warn!(
-                        "New salt {:?} is not the same as previously known next salt {:?}",
-                        slot_info.salt, next_salt
+                        "New salt {} is not the same as previously known next salt {:?}",
+                        hex::encode(slot_info.salt),
+                        next_salt.map(hex::encode)
                     );
-                    info!("Salt {:?} is out of date, removing commitment", old_salt);
+                    info!(
+                        "Salt {} is out of date, removing commitment",
+                        hex::encode(old_salt)
+                    );
 
                     task::spawn({
                         let plot = plot.clone();
@@ -142,19 +167,15 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                         async move {
                             if let Err(error) = plot.remove_commitment(old_salt).await {
                                 error!(
-                                    "Failed to remove old commitment for {:?}: {}",
-                                    old_salt, error
+                                    "Failed to remove old commitment for {}: {}",
+                                    hex::encode(old_salt),
+                                    error
                                 );
                             }
                         }
                     })
                     .await;
                 }
-                info!(
-                    "Finished recommitment for {:?} in {} seconds",
-                    old_salt,
-                    started.elapsed().as_secs_f32()
-                );
             }
         }
         if let Some(new_next_salt) = slot_info.next_salt {
@@ -163,9 +184,10 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                 if old_salt != current_salt {
                     if let Some(old_salt) = old_salt {
                         warn!(
-                            "Previous next salt {:?} is out of date (current is {:?}), \
+                            "Previous next salt {} is out of date (current is {:?}), \
                             removing commitment",
-                            old_salt, current_salt
+                            hex::encode(old_salt),
+                            current_salt.map(hex::encode)
                         );
 
                         task::spawn({
@@ -174,8 +196,9 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                             async move {
                                 if let Err(error) = plot.remove_commitment(old_salt).await {
                                     error!(
-                                        "Failed to remove old commitment for {:?}: {}",
-                                        old_salt, error
+                                        "Failed to remove old commitment for {}: {}",
+                                        hex::encode(old_salt),
+                                        error
                                     );
                                 }
                             }
@@ -190,19 +213,20 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                     async move {
                         let started = Instant::now();
                         info!(
-                            "Salt will update to {:?} soon, recommitting in background",
-                            new_next_salt
+                            "Salt will update to {} soon, recommitting in background",
+                            hex::encode(new_next_salt)
                         );
                         if let Err(error) = plot.create_commitment(new_next_salt).await {
                             error!(
-                                "Recommitting salt in background failed fro {:?}: {}",
-                                new_next_salt, error
+                                "Recommitting salt in background failed for {}: {}",
+                                hex::encode(new_next_salt),
+                                error
                             );
                             return;
                         }
                         info!(
-                            "Finished recommitment in background for {:?} in {} seconds",
-                            new_next_salt,
+                            "Finished recommitment in background for {} in {} seconds",
+                            hex::encode(new_next_salt),
                             started.elapsed().as_secs_f32()
                         );
                     }
