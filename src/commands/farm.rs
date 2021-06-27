@@ -79,12 +79,19 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
         )
         .await?;
 
-    // TODO: Add cleanup mechanism for old commitments after restart
     let mut current_salt = None;
     let mut next_salt = None;
 
     while let Some(slot_info) = sub.next().await {
         debug!("New slot: {:?}", slot_info);
+
+        if current_salt.is_none() {
+            let mut salts = vec![slot_info.salt];
+            if let Some(salt) = slot_info.next_salt {
+                salts.push(salt);
+            }
+            plot.retain_commitments(salts).await?;
+        }
 
         // Check if current salt has changed
         if current_salt != Some(slot_info.salt) {

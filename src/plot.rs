@@ -513,6 +513,24 @@ impl Plot {
         })?
     }
 
+    // Remove all commitments for all salts except those in the list
+    pub(crate) async fn retain_commitments(&self, salts: Vec<Salt>) -> io::Result<()> {
+        let salts: Vec<Salt> = self
+            .inner
+            .commitment_statuses
+            .lock()
+            .unwrap()
+            .drain_filter(|salt, _status| !salts.contains(salt))
+            .map(|(salt, _status)| salt)
+            .collect();
+
+        for salt in salts {
+            self.remove_commitment(salt).await?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn create_commitment(&self, salt: Salt) -> io::Result<()> {
         {
             let mut commitment_statuses = self.inner.commitment_statuses.lock().unwrap();

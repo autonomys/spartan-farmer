@@ -166,14 +166,13 @@ impl Commitments {
     /// Removes commitment from disk
     pub(super) async fn remove_commitment(&mut self, salt: Salt) -> io::Result<()> {
         self.metadata.commitments.remove(&salt);
-        if let Some(database) = self.databases.remove(&salt) {
-            utils::spawn_blocking(move || {
-                let path = database.path().to_path_buf();
-                drop(database);
-                std::fs::remove_dir_all(path)
-            })
-            .await?;
-        }
+        let db_path = self.path.join(hex::encode(salt));
+        let database = self.databases.remove(&salt);
+        utils::spawn_blocking(move || {
+            drop(database);
+            std::fs::remove_dir_all(db_path)
+        })
+        .await?;
 
         Ok(())
     }
