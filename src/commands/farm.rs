@@ -50,7 +50,7 @@ struct SlotInfo {
 /// address.
 pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn std::error::Error>> {
     info!("Connecting to RPC server");
-    let client = WsClientBuilder::default().build(&ws_server).await?;
+    let client = WsClientBuilder::default().build(ws_server).await?;
 
     let identity_file = path.join("identity.bin");
     if !identity_file.exists() {
