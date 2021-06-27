@@ -105,6 +105,7 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                 }
             } else {
                 let started = Instant::now();
+                // TODO: Do this in background so that we can solve in the meantime
                 info!("Salt update, recommitting");
                 if let Err(error) = plot.create_commitment(slot_info.salt).await {
                     error!("Failed to create commitment: {}", error);

@@ -1,6 +1,7 @@
 use crate::{utils, Salt};
 use async_std::io;
 use async_std::path::PathBuf;
+use log::warn;
 use rocksdb::{DBWithThreadMode, SingleThreaded, DB};
 use serde::ser::SerializeStruct;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -97,7 +98,13 @@ impl Commitments {
             .commitments
             .drain_filter(|_salt, status| *status != CommitmentStatus::Created)
         {
-            async_std::fs::remove_dir_all(path.join(hex::encode(salt))).await?;
+            let commitment_path = path.join(hex::encode(salt));
+            if let Err(error) = async_std::fs::remove_dir_all(&commitment_path).await {
+                warn!(
+                    "Failed to remove commitment at {:?}: {}",
+                    commitment_path, error
+                );
+            }
         }
 
         Ok(Self {
@@ -105,6 +112,10 @@ impl Commitments {
             databases: HashMap::new(),
             metadata,
         })
+    }
+
+    pub(super) fn get_existing_commitments(&self) -> impl Iterator<Item = &Salt> {
+        self.metadata.commitments.keys()
     }
 
     /// Get existing database or create an empty one with [`CommitmentStatus::InProgress`] status
@@ -125,7 +136,8 @@ impl Commitments {
                 entry.insert(Arc::clone(&db));
                 self.metadata
                     .commitments
-                    .insert(salt, CommitmentStatus::InProgress);
+                    .entry(salt)
+                    .or_insert(CommitmentStatus::InProgress);
                 async_std::fs::write(
                     self.path.join("metadata.json"),
                     serde_json::to_string(&self.metadata).unwrap(),

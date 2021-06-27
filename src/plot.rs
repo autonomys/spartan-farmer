@@ -135,6 +135,10 @@ impl Plot {
         let handlers = Arc::new(Handlers::default());
         let tags_dbs_fut = Commitments::new(path.join("plot-tags"));
         let mut tags_dbs = tags_dbs_fut.await.map_err(PlotError::PlotCommitmentsOpen)?;
+        let commitment_statuses: HashMap<Salt, CommitmentStatus> = tags_dbs
+            .get_existing_commitments()
+            .map(|&salt| (salt, CommitmentStatus::Created))
+            .collect();
 
         task::spawn({
             let handlers = Arc::clone(&handlers);
@@ -389,7 +393,7 @@ impl Plot {
             read_requests_sender,
             write_requests_sender,
             piece_count,
-            commitment_statuses: Mutex::default(),
+            commitment_statuses: Mutex::new(commitment_statuses),
         };
 
         Ok(Plot {
@@ -510,11 +514,13 @@ impl Plot {
     }
 
     pub(crate) async fn create_commitment(&self, salt: Salt) -> io::Result<()> {
-        self.inner
-            .commitment_statuses
-            .lock()
-            .unwrap()
-            .insert(salt, CommitmentStatus::InProgress);
+        {
+            let mut commitment_statuses = self.inner.commitment_statuses.lock().unwrap();
+            if let Some(CommitmentStatus::Created) = commitment_statuses.get(&salt) {
+                return Ok(());
+            }
+            commitment_statuses.insert(salt, CommitmentStatus::InProgress);
+        }
         let piece_count = self.inner.piece_count.load(Ordering::Acquire);
         for batch_start in (0..piece_count).step_by(BATCH_SIZE as usize) {
             if let Some(CommitmentStatus::Aborted) =
