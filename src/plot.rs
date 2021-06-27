@@ -809,6 +809,30 @@ mod tests {
     }
 
     #[async_std::test]
+    async fn test_commitment() {
+        init();
+        let path = TargetDirectory::new("commitment");
+
+        let piece: Piece = [9u8; 4096];
+        let salt: Salt = [1u8; 8];
+        let correct_tag: Tag = [23, 245, 162, 52, 107, 135, 192, 210];
+        let solution_range =
+            u64::from_be_bytes([0xff_u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        let index = 0;
+
+        let plot = Plot::open_or_create(&path).await.unwrap();
+        plot.write_many(vec![piece], index).await.unwrap();
+        plot.create_commitment(salt).await.unwrap();
+
+        let (tag, _index) = plot
+            .find_by_range(correct_tag, solution_range, salt)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(correct_tag, tag);
+    }
+
+    #[async_std::test]
     async fn test_find_by_tag() {
         init();
         let path = TargetDirectory::new("find_by_tag");
