@@ -1,6 +1,7 @@
-use crate::{Piece, PIECE_SIZE, PRIME_SIZE_BYTES};
+use crate::{Piece, Tag, PIECE_SIZE, PRIME_SIZE_BYTES};
 use ring::{digest, hmac};
 use schnorrkel::PublicKey;
+use std::convert::TryInto;
 use std::io::Write;
 
 pub(crate) fn genesis_piece_from_seed(seed: &str) -> Piece {
@@ -21,10 +22,9 @@ pub(crate) fn hash_public_key(public_key: &PublicKey) -> [u8; PRIME_SIZE_BYTES] 
     array
 }
 
-pub(crate) fn create_hmac(message: &[u8], key: &[u8]) -> [u8; 32] {
+pub(crate) fn create_tag(encoding: &[u8], key: &[u8]) -> Tag {
     let key = hmac::Key::new(hmac::HMAC_SHA256, key);
-    let mut array = [0u8; 32];
-    let hmac = hmac::sign(&key, message).as_ref().to_vec();
-    array.copy_from_slice(&hmac[0..32]);
-    array
+    hmac::sign(&key, encoding).as_ref()[0..8]
+        .try_into()
+        .unwrap()
 }

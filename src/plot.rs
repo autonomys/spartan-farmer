@@ -535,7 +535,7 @@ impl Plot {
                 pieces
                     .chunks(PIECE_SIZE)
                     .par_bridge()
-                    .map(|piece| crypto::create_hmac(piece, &salt)[..8].try_into().unwrap())
+                    .map(|piece| crypto::create_tag(piece, &salt))
                     .collect()
             })
             .await;
