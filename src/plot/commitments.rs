@@ -38,9 +38,11 @@ pub(super) struct Commitments {
 
 impl Commitments {
     pub(super) async fn new(path: PathBuf) -> io::Result<Self> {
-        let mut metadata: Metadata =
-            serde_json::from_str(&async_std::fs::read_to_string(path.join("metadata.json")).await?)
-                .unwrap_or_default();
+        let mut metadata: Metadata = async_std::fs::read_to_string(path.join("metadata.json"))
+            .await
+            .ok()
+            .and_then(|metadata| serde_json::from_str(&metadata).ok())
+            .unwrap_or_default();
 
         // Remove unfinished commitments from the previous run
         for (salt, _status) in metadata
