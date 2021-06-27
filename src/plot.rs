@@ -551,7 +551,7 @@ impl Plot {
 
             let tags: Vec<Tag> = utils::spawn_blocking(move || {
                 pieces
-                    .par_chunks(PIECE_SIZE)
+                    .par_chunks_exact(PIECE_SIZE)
                     .map(|piece| crypto::create_tag(piece, &salt))
                     .collect()
             })
