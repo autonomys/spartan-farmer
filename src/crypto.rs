@@ -22,8 +22,8 @@ pub(crate) fn hash_public_key(public_key: &PublicKey) -> [u8; PRIME_SIZE_BYTES] 
     array
 }
 
-pub(crate) fn create_tag(encoding: &[u8], key: &[u8]) -> Tag {
-    let key = hmac::Key::new(hmac::HMAC_SHA256, key);
+pub(crate) fn create_tag(encoding: &[u8], salt: &[u8]) -> Tag {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, salt);
     hmac::sign(&key, encoding).as_ref()[0..8]
         .try_into()
         .unwrap()
