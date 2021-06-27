@@ -2,9 +2,11 @@ use crate::{utils, Salt};
 use async_std::io;
 use async_std::path::PathBuf;
 use rocksdb::{DBWithThreadMode, SingleThreaded, DB};
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -17,16 +19,62 @@ pub(super) enum DbError {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
-enum CommitmentStatus {
+pub(super) enum CommitmentStatus {
     /// In-progress commitment to the part of the plot
     InProgress,
     /// Commitment to the whole plot and not some in-progress partial commitment
     Created,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone)]
 struct Metadata {
     pub(super) commitments: HashMap<Salt, CommitmentStatus>,
+}
+
+impl Serialize for Metadata {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut metadata = serializer.serialize_struct("Metadata", 1)?;
+        metadata.serialize_field(
+            "commitments",
+            &self
+                .commitments
+                .iter()
+                .map(|(salt, commitment_status)| (hex::encode(salt), *commitment_status))
+                .collect::<HashMap<_, _>>(),
+        )?;
+        metadata.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Metadata {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct S {
+            commitments: HashMap<String, CommitmentStatus>,
+        }
+
+        S::deserialize(deserializer).and_then(|s| {
+            Ok(Metadata {
+                commitments: s
+                    .commitments
+                    .into_iter()
+                    .map(|(salt, commitment_status)| {
+                        let salt_bytes = hex::decode(salt)?;
+                        Ok((salt_bytes[..].try_into()?, commitment_status))
+                    })
+                    .collect::<Result<HashMap<_, _>, Box<dyn std::error::Error>>>()
+                    .map_err(|error| {
+                        de::Error::custom(format!("Failed to decode salt: {}", error))
+                    })?,
+            })
+        })
+    }
 }
 
 #[derive(Debug)]
