@@ -13,6 +13,7 @@
 //! target as 64-bit unsigned integer, and find all of the keys in tags database that are
 //! `target ± solution range` (while also handing overflow/underlow) converted back to bytes.
 #![feature(try_blocks)]
+#![feature(hash_drain_filter)]
 
 mod commands;
 mod crypto;
@@ -28,14 +29,13 @@ use std::path::PathBuf;
 
 type Piece = [u8; PIECE_SIZE];
 type Tag = [u8; PRIME_SIZE_BYTES];
-type Salt = [u8; 32];
+type Salt = [u8; PRIME_SIZE_BYTES];
 
 const PRIME_SIZE_BYTES: usize = 8;
 const PIECE_SIZE: usize = 4096;
 const ENCODE_ROUNDS: usize = 1;
-// TODO: Replace fixed salt with something
-const SALT: Salt = [1u8; 32];
 const SIGNING_CONTEXT: &[u8] = b"FARMER";
+const BATCH_SIZE: u64 = (16 * 1024 * 1024 / PIECE_SIZE) as u64;
 
 #[derive(Debug, Clap)]
 #[clap(about, version)]
@@ -82,7 +82,6 @@ fn main() {
                 path,
                 crypto::genesis_piece_from_seed(&seed),
                 plot_pieces,
-                SALT,
             ))
             .unwrap();
         }

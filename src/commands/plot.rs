@@ -1,5 +1,5 @@
 use crate::plot::Plot;
-use crate::{crypto, Piece, Salt, ENCODE_ROUNDS, PIECE_SIZE, PRIME_SIZE_BYTES};
+use crate::{crypto, Piece, BATCH_SIZE, ENCODE_ROUNDS, PIECE_SIZE, PRIME_SIZE_BYTES};
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use indicatif::ProgressBar;
@@ -12,14 +12,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-const BATCH_SIZE: u64 = (16 * 1024 * 1204 / PIECE_SIZE) as u64;
-
-/// Create a new plot with specified genesis piece, piece count and salt.
+/// Create a new plot with specified genesis piece and piece count.
 pub(crate) async fn plot(
     path: PathBuf,
     genesis_piece: Piece,
     piece_count: u64,
-    salt: Salt,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let identity_file = path.join("identity.bin");
     let keypair = if identity_file.exists() {
@@ -73,7 +70,7 @@ pub(crate) async fn plot(
                     bar.finish();
                 });
                 while let Some((batch_start, encoded_batch)) = batch_receiver.next().await {
-                    let result = plot.write_many(encoded_batch, batch_start, salt).await;
+                    let result = plot.write_many(encoded_batch, batch_start).await;
 
                     if let Err(error) = result {
                         warn!("{}", error);
