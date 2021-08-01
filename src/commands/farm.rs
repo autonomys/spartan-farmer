@@ -25,10 +25,15 @@ struct Solution {
     tag: Tag,
 }
 
+/// Proposed proof of space consisting of solution and farmer's secret key for block signing
 #[derive(Debug, Serialize)]
 struct ProposedProofOfSpaceResponse {
+    /// Slot number
     slot_number: SlotNumber,
+    /// Solution (if present) from farmer's plot corresponding to slot number above
     solution: Option<Solution>,
+    // Secret key, used for signing blocks on the client node
+    secret_key: Vec<u8>,
 }
 
 /// Information about new slot that just arrived
@@ -267,6 +272,7 @@ pub(crate) async fn farm(path: PathBuf, ws_server: &str) -> Result<(), Box<dyn s
                 JsonRpcParams::Array(vec![serde_json::to_value(&ProposedProofOfSpaceResponse {
                     slot_number: slot_info.slot_number,
                     solution,
+                    secret_key: keypair.secret.to_bytes().into(),
                 })
                 .unwrap()]),
             )
